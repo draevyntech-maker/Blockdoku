@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#12141c">
+<title>Blockdoku</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Blockdoku">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12141c;
+    --panel:#1b1e29;
+    --panel-border:#262b3a;
+    --grid-line:#2a2e3d;
+    --cell-empty:#1e2130;
+    --text:#edeef2;
+    --text-dim:#8b90a3;
+    --gold:#d9a455;
+    --danger:#e1653a;
+    --safe:#4fb6a8;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    overscroll-behavior:none;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  .app{
+    max-width:480px;
+    margin:0 auto;
+    min-height:100dvh;
+    display:flex;
+    flex-direction:column;
+    padding:max(16px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+  }
+  header{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    padding:4px 2px 18px;
+  }
+  h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:26px;
+    letter-spacing:-0.02em;
+    margin:0;
+  }
+  h1 span{color:var(--gold);}
+  .scorebox{text-align:right;}
+  .scorebox .label{
+    display:block;
+    font-size:11px;
+    color:var(--text-dim);
+    letter-spacing:0.04em;
+    margin-bottom:2px;
+  }
+  .scorebox .value{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:24px;
+    line-height:1;
+  }
+  .subrow{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:14px;
+    padding:0 2px;
+  }
+  .best{
+    font-size:13px;
+    color:var(--text-dim);
+    display:flex;
+    gap:6px;
+    align-items:baseline;
+  }
+  .best b{color:var(--text); font-weight:600; font-family:'Space Grotesk',sans-serif;}
+  .combo{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:13px;
+    font-weight:600;
+    color:var(--gold);
+    opacity:0;
+    transform:translateY(4px);
+    transition:opacity .25s ease, transform .25s ease;
+  }
+  .combo.show{opacity:1; transform:translateY(0);}
+
+  .board-wrap{
+    position:relative;
+    width:100%;
+    aspect-ratio:1/1;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:14px;
+    padding:8px;
+  }
+  .board{
+    position:relative;
+    display:grid;
+    grid-template-columns:repeat(9,1fr);
+    grid-template-rows:repeat(9,1fr);
+    width:100%;
+    height:100%;
+    border-radius:6px;
+    overflow:hidden;
+  }
+  .cell{
+    position:relative;
+    background:var(--cell-empty);
+    border:1px solid var(--grid-line);
+  }
+  .cell.box-right{border-right:2px solid #363c50;}
+  .cell.box-bottom{border-bottom:2px solid #363c50;}
+  .cell .fill{
+    position:absolute; inset:2px;
+    border-radius:5px;
+    transition:transform .12s ease;
+  }
+  .cell.pop .fill{ animation:pop .32s ease forwards; }
+  @keyframes pop{
+    0%{transform:scale(1); opacity:1;}
+    60%{transform:scale(1.15); opacity:.7;}
+    100%{transform:scale(0.2); opacity:0;}
+  }
+  .cell.preview-valid{ background:#26402f; }
+  .cell.preview-invalid{ background:#3a2430; }
+  .cell.preview-valid .fill, .cell.preview-invalid .fill{
+    position:absolute; inset:2px; border-radius:5px; opacity:.55;
+  }
+
+  .tray{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:10px;
+    margin-top:16px;
+  }
+  .slot{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    height:88px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+  }
+  .slot.empty::after{
+    content:'';
+  }
+  .piece{
+    display:grid;
+    touch-action:none;
+    cursor:grab;
+  }
+  .piece.dragging-source{ opacity:.25; }
+  .pc{ border-radius:4px; margin:2px; }
+
+  .ghost{
+    position:fixed;
+    top:0; left:0;
+    display:grid;
+    pointer-events:none;
+    z-index:50;
+    opacity:.95;
+    filter:drop-shadow(0 6px 14px rgba(0,0,0,.45));
+  }
+  .ghost .pc{ border-radius:5px; margin:2px; }
+
+  .footer-row{
+    display:flex;
+    justify-content:center;
+    margin-top:16px;
+  }
+  .newgame-btn{
+    background:transparent;
+    border:1px solid var(--panel-border);
+    color:var(--text-dim);
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    padding:8px 16px;
+    border-radius:20px;
+  }
+
+  .overlay{
+    position:fixed; inset:0;
+    background:rgba(10,11,16,.82);
+    display:flex; align-items:center; justify-content:center;
+    z-index:100;
+    opacity:1; transition:opacity .25s ease;
+  }
+  .overlay.hidden{ opacity:0; pointer-events:none; }
+  .overlay-card{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:18px;
+    padding:32px 28px;
+    text-align:center;
+    width:min(320px, 84vw);
+  }
+  .overlay-card h2{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:22px;
+    margin:0 0 6px;
+  }
+  .overlay-card p{
+    color:var(--text-dim);
+    font-size:14px;
+    margin:0 0 22px;
+  }
+  .overlay-card .final{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:36px;
+    font-weight:700;
+    color:var(--gold);
+    display:block;
+    margin-bottom:4px;
+  }
+  .overlay-card button{
+    background:var(--gold);
+    color:#221a0f;
+    border:none;
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:15px;
+    padding:12px 26px;
+    border-radius:30px;
+    width:100%;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Block<span>doku</span></h1>
+    <div class="scorebox">
+      <span class="label">SCORE</span>
+      <span class="value" id="score">0</span>
+    </div>
+  </header>
+  <div class="subrow">
+    <div class="best">Best <b id="best">0</b></div>
+    <div class="combo" id="combo">Combo</div>
+  </div>
+
+  <div class="board-wrap">
+    <div class="board" id="board"></div>
+  </div>
+
+  <div class="tray" id="tray">
+    <div class="slot" id="slot0"></div>
+    <div class="slot" id="slot1"></div>
+    <div class="slot" id="slot2"></div>
+  </div>
+
+  <div class="footer-row">
+    <button class="newgame-btn" id="newGameBtn">New game</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="overlay">
+  <div class="overlay-card">
+    <h2>No moves left</h2>
+    <span class="final" id="finalScore">0</span>
+    <p>None of your pieces fit on the board.</p>
+    <button id="restartBtn">Play again</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var COLORS = ['#4fb6a8','#e1653a','#d9a455','#8b7fd1','#5b9bd1','#d1638b'];
+  var SIZE = 9;
+
+  // Piece shapes as [row,col] offsets from bounding-box top-left.
+  var SHAPES = [
+    [[0,0]],
+    [[0,0],[0,1]],
+    [[0,0],[1,0]],
+    [[0,0],[0,1],[0,2]],
+    [[0,0],[1,0],[2,0]],
+    [[0,0],[0,1],[0,2],[0,3]],
+    [[0,0],[1,0],[2,0],[3,0]],
+    [[0,0],[0,1],[0,2],[0,3],[0,4]],
+    [[0,0],[1,0],[2,0],[3,0],[4,0]],
+    [[0,0],[0,1],[1,0],[1,1]],
+    [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]],
+    [[0,0],[1,0],[2,0],[2,1]],
+    [[0,0],[0,1],[1,1],[2,1]],
+    [[0,1],[1,1],[2,0],[2,1]],
+    [[0,0],[1,0],[1,1],[2,1]],
+    [[0,0],[0,1],[1,1],[1,2]],
+    [[0,1],[0,2],[1,0],[1,1]],
+    [[0,1],[1,0],[1,1],[2,1]],
+    [[0,0],[0,1],[0,2],[1,1]],
+    [[0,1],[1,0],[1,1],[1,2]],
+    [[0,0],[1,0],[1,1],[2,0]],
+    [[0,1],[1,1],[1,0],[2,1]],
+    [[0,1],[1,0],[1,1],[1,2],[2,1]],
+    [[0,0],[1,0],[1,1],[2,0],[2,1]],
+    [[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]],
+    [[0,0],[1,0],[2,0],[2,1],[2,2]],
+    [[0,0],[0,1],[0,2],[1,0],[2,0]],
+    [[0,2],[1,2],[2,0],[2,1],[2,2]],
+    [[0,0],[0,1],[0,2],[1,2],[2,2]]
+  ];
+
+  var board = [];       // 9x9 -> null or color string
+  var score = 0;
+  var best = 0;
+  var comboStreak = 0;
+  var tray = [null,null,null]; // {shape, color}
+  var pieceEls = [null,null,null];
+
+  var boardEl = document.getElementById('board');
+  var scoreEl = document.getElementById('score');
+  var bestEl = document.getElementById('best');
+  var comboEl = document.getElementById('combo');
+  var overlayEl = document.getElementById('overlay');
+  var finalScoreEl = document.getElementById('finalScore');
+
+  try {
+    var storedBest = window.localStorage && window.localStorage.getItem('blockdoku_best');
+    if (storedBest) best = parseInt(storedBest, 10) || 0;
+  } catch(e) { /* storage unavailable, ignore */ }
+  bestEl.textContent = best;
+
+  function saveBest(){
+    try { window.localStorage && window.localStorage.setItem('blockdoku_best', String(best)); }
+    catch(e) { /* ignore */ }
+  }
+
+  // ---------- board setup ----------
+  function initBoard(){
+    board = [];
+    boardEl.innerHTML = '';
+    for (var r=0;r<SIZE;r++){
+      var row = [];
+      for (var c=0;c<SIZE;c++){
+        row.push(null);
+        var cell = document.createElement('div');
+        cell.className = 'cell';
+        if (c===2||c===5) cell.classList.add('box-right');
+        if (r===2||r===5) cell.classList.add('box-bottom');
+        cell.dataset.r = r;
+        cell.dataset.c = c;
+        boardEl.appendChild(cell);
+      }
+      board.push(row);
+    }
+  }
+  function cellEl(r,c){ return boardEl.children[r*SIZE+c]; }
+
+  function normalizeShape(shape){
+    var minR=99,minC=99;
+    shape.forEach(function(p){ if(p[0]<minR)minR=p[0]; if(p[1]<minC)minC=p[1]; });
+    return shape.map(function(p){ return [p[0]-minR, p[1]-minC]; });
+  }
+  function shapeBounds(shape){
+    var maxR=0,maxC=0;
+    shape.forEach(function(p){ if(p[0]>maxR)maxR=p[0]; if(p[1]>maxC)maxC=p[1]; });
+    return {rows:maxR+1, cols:maxC+1};
+  }
+
+  function randomPiece(){
+    var shape = normalizeShape(SHAPES[Math.floor(Math.random()*SHAPES.length)]);
+    var color = COLORS[Math.floor(Math.random()*COLORS.length)];
+    return {shape:shape, color:color};
+  }
+
+  function refillTrayIfEmpty(){
+    var allEmpty = tray.every(function(p){ return p===null; });
+    if (allEmpty){
+      for (var i=0;i<3;i++) tray[i] = randomPiece();
+      renderTray();
+    }
+  }
+
+  function renderTray(){
+    for (var i=0;i<3;i++){
+      var slot = document.getElementById('slot'+i);
+      slot.innerHTML = '';
+      slot.classList.toggle('empty', tray[i]===null);
+      if (!tray[i]) continue;
+      var p = tray[i];
+      var b = shapeBounds(p.shape);
+      var cellPx = Math.min(20, Math.floor(72 / Math.max(b.rows,b.cols)));
+      var el = document.createElement('div');
+      el.className = 'piece';
+      el.style.gridTemplateColumns = 'repeat('+b.cols+', '+cellPx+'px)';
+      el.style.gridTemplateRows = 'repeat('+b.rows+', '+cellPx+'px)';
+      for (var rr=0; rr<b.rows; rr++){
+        for (var cc=0; cc<b.cols; cc++){
+          var has = p.shape.some(function(o){ return o[0]===rr && o[1]===cc; });
+          var d = document.createElement('div');
+          if (has){
+            d.className = 'pc';
+            d.style.width = (cellPx-4)+'px';
+            d.style.height = (cellPx-4)+'px';
+            d.style.background = p.color;
+          }
+          el.appendChild(d);
+        }
+      }
+      el.dataset.index = i;
+      slot.appendChild(el);
+      pieceEls[i] = el;
+      attachDrag(el, i);
+    }
+  }
+
+  // ---------- placement logic ----------
+  function canPlace(shape, r0, c0){
+    for (var i=0;i<shape.length;i++){
+      var r = r0+shape[i][0], c = c0+shape[i][1];
+      if (r<0||r>=SIZE||c<0||c>=SIZE) return false;
+      if (board[r][c]) return false;
+    }
+    return true;
+  }
+
+  function anyPlacementExists(piece){
+    for (var r=0;r<SIZE;r++){
+      for (var c=0;c<SIZE;c++){
+        if (canPlace(piece.shape, r, c)) return true;
+      }
+    }
+    return false;
+  }
+
+  function checkGameOver(){
+    var remaining = tray.filter(function(p){ return p!==null; });
+    if (remaining.length===0) return false;
+    var stuck = remaining.every(function(p){ return !anyPlacementExists(p); });
+    return stuck;
+  }
+
+  function placePiece(idx, r0, c0){
+    var piece = tray[idx];
+    if (!piece || !canPlace(piece.shape, r0, c0)) return false;
+
+    piece.shape.forEach(function(o){
+      var r=r0+o[0], c=c0+o[1];
+      board[r][c] = piece.color;
+      var el = cellEl(r,c);
+      var fill = document.createElement('div');
+      fill.className='fill';
+      fill.style.background = piece.color;
+      el.appendChild(fill);
+    });
+
+    var placedCells = piece.shape.length;
+    score += placedCells;
+
+    tray[idx] = null;
+
+    var cleared = clearLines();
+    if (cleared.count > 0){
+      comboStreak++;
+      var base = 18 * cleared.count + (cleared.count>1 ? 10*(cleared.count-1) : 0);
+      var mult = 1 + 0.5*(comboStreak-1);
+      var gained = Math.round(base*mult);
+      score += gained;
+      showCombo(comboStreak, gained);
+    } else {
+      comboStreak = 0;
+      hideCombo();
+    }
+
+    if (score > best){ best = score; bestEl.textContent = best; saveBest(); }
+    scoreEl.textContent = score;
+
+    renderTray();
+    refillTrayIfEmpty();
+
+    if (checkGameOver()){
+      setTimeout(showGameOver, 350);
+    }
+    return true;
+  }
+
+  function clearLines(){
+    var fullRows = [];
+    var fullCols = [];
+    var fullBoxes = [];
+    for (var r=0;r<SIZE;r++){
+      if (board[r].every(function(v){ return v!==null; })) fullRows.push(r);
+    }
+    for (var c=0;c<SIZE;c++){
+      var full=true;
+      for (var r2=0;r2<SIZE;r2++){ if(!board[r2][c]){ full=false; break; } }
+      if (full) fullCols.push(c);
+    }
+    for (var br=0;br<3;br++){
+      for (var bc=0;bc<3;bc++){
+        var full2=true;
+        for (var i=0;i<3 && full2;i++){
+          for (var j=0;j<3;j++){
+            if (!board[br*3+i][bc*3+j]){ full2=false; break; }
+          }
+        }
+        if (full2) fullBoxes.push([br,bc]);
+      }
+    }
+
+    var cellsToClear = new Set();
+    fullRows.forEach(function(r){ for(var c=0;c<SIZE;c++) cellsToClear.add(r+'_'+c); });
+    fullCols.forEach(function(c){ for(var r=0;r<SIZE;r++) cellsToClear.add(r+'_'+c); });
+    fullBoxes.forEach(function(b){
+      for (var i=0;i<3;i++) for (var j=0;j<3;j++) cellsToClear.add((b[0]*3+i)+'_'+(b[1]*3+j));
+    });
+
+    cellsToClear.forEach(function(key){
+      var parts = key.split('_');
+      var r = parseInt(parts[0],10), c = parseInt(parts[1],10);
+      board[r][c] = null;
+      var el = cellEl(r,c);
+      el.classList.add('pop');
+      setTimeout(function(el){
+        return function(){
+          el.classList.remove('pop');
+          el.innerHTML='';
+        };
+      }(el), 320);
+    });
+
+    return { count: fullRows.length + fullCols.length + fullBoxes.length };
+  }
+
+  function showCombo(streak, gained){
+    comboEl.textContent = (streak>1 ? 'Combo x'+streak+'  ' : '') + '+'+gained;
+    comboEl.classList.add('show');
+    clearTimeout(showCombo._t);
+    showCombo._t = setTimeout(hideCombo, 1100);
+  }
+  function hideCombo(){ comboEl.classList.remove('show'); }
+
+  function showGameOver(){
+    finalScoreEl.textContent = score;
+    overlayEl.classList.remove('hidden');
+  }
+
+  function newGame(){
+    score = 0;
+    comboStreak = 0;
+    scoreEl.textContent = '0';
+    hideCombo();
+    overlayEl.classList.add('hidden');
+    initBoard();
+    tray = [null,null,null];
+    refillTrayIfEmpty();
+  }
+
+  // ---------- drag and drop (pointer events) ----------
+  var drag = null; // {idx, ghostEl, cellPx, shape, color, bounds, offsetX, offsetY}
+
+  function attachDrag(el, idx){
+    el.addEventListener('pointerdown', function(ev){
+      if (!tray[idx]) return;
+      ev.preventDefault();
+      startDrag(idx, el, ev);
+    });
+  }
+
+  function startDrag(idx, sourceEl, ev){
+    var piece = tray[idx];
+    var b = shapeBounds(piece.shape);
+    var boardRect = boardEl.getBoundingClientRect();
+    var cellPx = boardRect.width / SIZE;
+
+    sourceEl.classList.add('dragging-source');
+
+    var ghost = document.createElement('div');
+    ghost.className = 'ghost';
+    ghost.style.gridTemplateColumns = 'repeat('+b.cols+', '+cellPx+'px)';
+    ghost.style.gridTemplateRows = 'repeat('+b.rows+', '+cellPx+'px)';
+    for (var rr=0; rr<b.rows; rr++){
+      for (var cc=0; cc<b.cols; cc++){
+        var has = piece.shape.some(function(o){ return o[0]===rr && o[1]===cc; });
+        var d = document.createElement('div');
+        if (has){
+          d.className='pc';
+          d.style.width=(cellPx-4)+'px';
+          d.style.height=(cellPx-4)+'px';
+          d.style.background=piece.color;
+        }
+        ghost.appendChild(d);
+      }
+    }
+    document.body.appendChild(ghost);
+
+    var lift = cellPx * 1.7;
+
+    drag = {
+      idx: idx, ghost: ghost, cellPx: cellPx, shape: piece.shape, bounds: b,
+      boardRect: boardRect, lift: lift, lastR: null, lastC: null
+    };
+
+    positionGhost(ev.clientX, ev.clientY);
+    updatePreview(ev.clientX, ev.clientY);
+
+    window.addEventListener('pointermove', onDragMove);
+    window.addEventListener('pointerup', onDragEnd);
+    window.addEventListener('pointercancel', onDragEnd);
+  }
+
+  function positionGhost(x, y){
+    if (!drag) return;
+    var w = drag.bounds.cols * drag.cellPx;
+    var h = drag.bounds.rows * drag.cellPx;
+    drag.ghost.style.left = (x - w/2) + 'px';
+    drag.ghost.style.top = (y - h/2 - drag.lift) + 'px';
+  }
+
+  function targetCellFromPoint(x, y){
+    var boardRect = boardEl.getBoundingClientRect();
+    var cellPx = boardRect.width / SIZE;
+    var localX = x - boardRect.left;
+    var localY = (y - drag.lift) - boardRect.top;
+    var anchorCol = Math.floor(localX / cellPx);
+    var anchorRow = Math.floor(localY / cellPx);
+    return {r: anchorRow, c: anchorCol};
+  }
+
+  function clearPreview(){
+    for (var r=0;r<SIZE;r++) for (var c=0;c<SIZE;c++){
+      cellEl(r,c).classList.remove('preview-valid','preview-invalid');
+    }
+  }
+
+  function updatePreview(x, y){
+    var t = targetCellFromPoint(x,y);
+    clearPreview();
+    if (drag.lastR===t.r && drag.lastC===t.c) {
+      // still recompute validity classes below even if unchanged
+    }
+    drag.lastR = t.r; drag.lastC = t.c;
+    var ok = canPlace(drag.shape, t.r, t.c);
+    drag.shape.forEach(function(o){
+      var r=t.r+o[0], c=t.c+o[1];
+      if (r>=0&&r<SIZE&&c>=0&&c<SIZE){
+        cellEl(r,c).classList.add(ok ? 'preview-valid':'preview-invalid');
+      }
+    });
+    drag.validNow = ok;
+  }
+
+  function onDragMove(ev){
+    if (!drag) return;
+    positionGhost(ev.clientX, ev.clientY);
+    updatePreview(ev.clientX, ev.clientY);
+  }
+
+  function onDragEnd(ev){
+    if (!drag) return;
+    var t = targetCellFromPoint(ev.clientX, ev.clientY);
+    clearPreview();
+    var idx = drag.idx;
+    var placed = false;
+    if (canPlace(drag.shape, t.r, t.c)){
+      placed = placePiece(idx, t.r, t.c);
+    }
+    drag.ghost.remove();
+    var srcEl = pieceEls[idx];
+    if (srcEl && srcEl.parentNode) srcEl.classList.remove('dragging-source');
+    drag = null;
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', onDragEnd);
+    window.removeEventListener('pointercancel', onDragEnd);
+  }
+
+  document.getElementById('restartBtn').addEventListener('click', newGame);
+  document.getElementById('newGameBtn').addEventListener('click', newGame);
+
+  // ---------- boot ----------
+  initBoard();
+  refillTrayIfEmpty();
+
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('sw.js').catch(function(){ /* offline caching optional */ });
+    });
+  }
+})();
+</script>
+</body>
+</html>
